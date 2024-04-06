@@ -2,7 +2,7 @@ import pulp
 
 lp_problem = pulp.LpProblem('Minimize Z', pulp.LpMinimize)
 
-x1 = pulp.LpVariable('x1', lowBound=0)
+x1 = pulp.LpVariable('x3', lowBound=0)
 x2 = pulp.LpVariable('x2', lowBound=0)
 z = pulp.LpVariable('z', lowBound=0)
 
