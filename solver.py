@@ -13,6 +13,9 @@ d = defaultdict(lambda:defaultdict(lambda:None))
 # linknumber i j = si --- (number) --- sj
 # linknumber = defaultdict(lambda:defaultdict(lambda:None)) 
 
+def sorted_tuple(a,b):
+    return tuple([a,b])
+
 s = [0,1,2,3]
 cap[0][1] = 5
 cap[1][2] = 15
@@ -41,29 +44,66 @@ def func(s,cap,d):
                     if s3 == s4:
                         continue
                     if cap[s3][s4]:
-                        f[s1][s2][(s3,s4)] = pulp.LpVariable('f|{}|{}|{}_{}'.format(s1,s2,s3,s4), lowBound=0)
-
+                        f[s1][s2][sorted_tuple(s3,s4)] = pulp.LpVariable('f|{}|{}|{}_{}'.format(s1,s2,s3,s4), lowBound=0)
+    
     for scur in s:
         in_flow = []
         out_flow = []
         demand = 0
         for s1 in s:
             for s2 in s:
-                if s1 == s2 or s2 == scur:
+                if s1 == s2:
                     continue
                 for s4 in s:
                     if scur == s4:
                         continue
                     if cap[scur][s4]:
-                        out_flow.append(f[s1][s2][(scur,s4)])
-                        in_flow.append(f[s2][s1][(scur,s4)])
+                        out_flow.append(f[s1][s2][sorted_tuple(scur,s4)])
+                        in_flow.append(f[s1][s2][sorted_tuple(s4,scur)])
             demand +=  d[scur][s1] if d[scur][s1] else 0
+            demand -=  d[s1][scur] if d[s1][scur] else 0
         # outflow - inflow = demand
-        print(sum(out_flow))
-        print(sum(in_flow))
-        print()
+        # if scur == 1:
+        #     print(sum(out_flow))
+        #     print(sum(in_flow))
+        #     print(demand)
         lp_problem += sum(out_flow) - sum(in_flow) == demand
-        
+    
+    for scur in s:
+        outflow = []
+        inflow = []
+        demandgen = 0
+        demandcon = 0
+        for s_dest in s:
+            if scur == s_dest:
+                continue
+            demandgen += d[scur][s_dest] if d[scur][s_dest] else 0
+            demandcon += d[s_dest][scur] if d[s_dest][scur] else 0
+
+            for s1 in s:
+                    if s1 == scur:
+                        continue
+                    if cap[scur][s1]:
+                        outflow.append(f[scur][s_dest][sorted_tuple(scur, s1)])
+                        inflow.append(f[s_dest][scur][sorted_tuple(s1, scur)])
+        lp_problem += sum(outflow) +demandcon == demandgen + sum(inflow)
+
+    # for scur in s:
+    #     flow_through_dest = []
+    #     demand = 0
+    #     for s_dest in s:
+    #         if scur == s_dest:
+    #             continue
+    #         # demand += d[scur][s_dest] if d[scur][s_dest] else 0
+    #         demand += d[s_dest][scur] if d[s_dest][scur] else 0
+
+    #         for s1 in s:
+    #                 if s1 == scur:
+    #                     continue
+    #                 if cap[scur][s1]:
+    #                     flow_through_dest.append(f[s_dest][scur][sorted_tuple(s1, scur)])
+    #     lp_problem += sum(flow_through_dest) == demand
+    
     for s1 in s:
         for s2 in s:
             if s1 == s2:
@@ -74,11 +114,25 @@ def func(s,cap,d):
                     for s4 in s:
                         if s3 == s4:
                             continue
-                        total_flow.append(f[s3][s4][(s1,s2)])
+                        total_flow.append(f[s3][s4][sorted_tuple(s1,s2)])
                 # total_flow <= cap
                 lp_problem += sum(total_flow) <= cap[s1][s2]
                 lp_problem += z*cap[s1][s2] >= sum(total_flow)
-                
+    
+    # Add additional constraint to ensure flow is 0 for switches with no demand
+    for s1 in s:
+        for s2 in s:
+            if s1 == s2:
+                continue
+            if not d[s1][s2]:
+                for s3 in s:
+                    for s4 in s:
+                        if s3 == s4:
+                            continue
+                        if cap[s3][s4]:
+                            lp_problem += f[s1][s2][sorted_tuple(s3, s4)] == 0
+
+              
     lp_problem += z 
     lp_problem.solve()
 
@@ -91,8 +145,8 @@ def func(s,cap,d):
                 for s4 in s:
                     if s3 == s4:
                         continue
-                    if cap[s3][s4] and pulp.value(f[s1][s2][(s3,s4)]):
-                        print('f|{}|{}|{}_{} ='.format(s1,s2,s3,s4),pulp.value(f[s1][s2][(s3,s4)]))
+                    if cap[s3][s4] and pulp.value(f[s1][s2][sorted_tuple(s3,s4)]):
+                        print('f|{}|{}|{}_{} ='.format(s1,s2,s3,s4),pulp.value(f[s1][s2][sorted_tuple(s3,s4)]))
                         
     print("z =", pulp.value(z))
     
