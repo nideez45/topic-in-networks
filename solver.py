@@ -16,18 +16,25 @@ d = defaultdict(lambda:defaultdict(lambda:None))
 def sorted_tuple(a,b):
     return tuple([a,b])
 
-s = [0,1,2,3]
-cap[0][1] = 5
-cap[1][2] = 15
-cap[2][3] = 15
-cap[3][0] = 10
-cap[1][0] = 5
-cap[2][1] = 15
-cap[3][2] = 15
-cap[0][3] = 10
+s = [0,1,2,3,4]
+cap[0][1] = 10
+cap[1][2] = 5
+cap[2][3] = 5
+cap[3][4] = 5
+cap[4][1] = 5
+# add symmetric weight below like cap[1][0] = 5
+# cap[0][1] = 5
+# cap[1][0] = 5
 
-d[0][2] = 5
-d[2][0] = 5
+cap[1][0] = cap[0][1]
+cap[2][1] = cap[1][2]
+cap[3][2] = cap[2][3]
+cap[4][3] = cap[3][4]
+cap[1][4] = cap[4][1]
+
+
+d[0][3] = 5
+d[3][1] = 5
 # d[2][0] = 3
 
 # s = [0,1,2]
@@ -68,6 +75,7 @@ def func(s,cap,d):
                         continue
                     if cap[scur][s4]:
                         out_flow.append(f[s1][s2][sorted_tuple(scur,s4)])
+                    if cap[s4][scur]:
                         in_flow.append(f[s1][s2][sorted_tuple(s4,scur)])
             demand +=  d[scur][s1] if d[scur][s1] else 0
             demand -=  d[s1][scur] if d[s1][scur] else 0
@@ -94,6 +102,7 @@ def func(s,cap,d):
                         continue
                     if cap[scur][s1]:
                         outflow.append(f[scur][s_dest][sorted_tuple(scur, s1)])
+                    if cap[s1][scur]:
                         inflow.append(f[s_dest][scur][sorted_tuple(s1, scur)])
         lp_problem += sum(outflow) +demandcon == demandgen + sum(inflow)
     
@@ -107,6 +116,7 @@ def func(s,cap,d):
                 for s_neigh in s:
                     if cap[s_neigh][scur]:
                         in_flow.append(f[s1][s2][sorted_tuple(s_neigh,scur)])
+                    if cap[scur][s_neigh]:
                         out_flow.append(f[s1][s2][sorted_tuple(scur,s_neigh)])
                 lp_problem += sum(in_flow) == sum(out_flow)
                 
