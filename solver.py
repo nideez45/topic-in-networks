@@ -26,8 +26,17 @@ cap[2][1] = 15
 cap[3][2] = 15
 cap[0][3] = 10
 
-d[0][2] = 12
+d[0][2] = 5
+d[2][0] = 5
 # d[2][0] = 3
+
+# s = [0,1,2]
+# cap[0][1] = 5
+# cap[0][2] = 10
+# cap[1][0] = 5
+# cap[2][0] = 10
+# d[1][2] = 3
+# d[1][0] = 2
 def func(s,cap,d):
     # i j k = flow of si to sj through link k
     f = defaultdict(lambda: defaultdict(dict))
@@ -87,6 +96,57 @@ def func(s,cap,d):
                         outflow.append(f[scur][s_dest][sorted_tuple(scur, s1)])
                         inflow.append(f[s_dest][scur][sorted_tuple(s1, scur)])
         lp_problem += sum(outflow) +demandcon == demandgen + sum(inflow)
+    
+    for scur in s:
+        for s1 in s:
+            for s2 in s:
+                if s1 == s2 or s1 ==scur or s2 ==scur:
+                    continue
+                in_flow = []
+                out_flow = []
+                for s_neigh in s:
+                    if cap[s_neigh][scur]:
+                        in_flow.append(f[s1][s2][sorted_tuple(s_neigh,scur)])
+                        out_flow.append(f[s1][s2][sorted_tuple(scur,s_neigh)])
+                lp_problem += sum(in_flow) == sum(out_flow)
+                
+        # outflow - inflow = demand
+        # if scur == 1:
+        #     print(sum(out_flow))
+        #     print(sum(in_flow))
+        #     print(demand)
+        # lp_problem += sum(out_flow) - sum(in_flow) == demand
+    
+    for scur in s:
+        outflow = []
+        inflow = []
+        demandgen = 0
+        demandcon = 0
+        for s_neigh in s:
+            if cap[s_neigh][scur]:
+                for s_other in s:
+                    if scur == s_other:
+                        continue
+                    inflow.append(f[s_other][scur][sorted_tuple(s_neigh, scur)])
+                    outflow.append(f[scur][s_other][sorted_tuple(scur, s_neigh)])
+            if s_neigh != scur:
+                demandgen += d[scur][s_neigh] if d[scur][s_neigh] else 0
+                demandcon += d[s_neigh][scur] if d[s_neigh][scur] else 0
+        lp_problem += sum(inflow)  == demandcon
+        lp_problem +=  demandgen == sum(outflow)
+        # for s_dest in s:
+        #     if scur == s_dest:
+        #         continue
+        #     demandgen += d[scur][s_dest] if d[scur][s_dest] else 0
+        #     demandcon += d[s_dest][scur] if d[s_dest][scur] else 0
+
+        #     for s1 in s:
+        #             if s1 == scur:
+        #                 continue
+        #             if cap[scur][s1]:
+        #                 outflow.append(f[scur][s_dest][sorted_tuple(scur, s1)])
+        #                 inflow.append(f[s_dest][scur][sorted_tuple(s1, scur)])
+        # lp_problem += sum(outflow) +demandcon == demandgen + sum(inflow)
 
     # for scur in s:
     #     flow_through_dest = []
