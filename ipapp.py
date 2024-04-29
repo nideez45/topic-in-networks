@@ -352,7 +352,7 @@ class ProjectController(app_manager.RyuApp):
                     if bucket_weight:
                         buckets.append(
                                 ofp_parser.OFPBucket(
-                                    weight=math.ceil(bucket_weight),
+                                    weight=int(2*bucket_weight),
                                     watch_port=ofp.OFPG_ANY,
                                     watch_group=ofp.OFPG_ANY,
                                     actions=bucket_action
