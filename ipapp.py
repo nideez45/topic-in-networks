@@ -2,16 +2,35 @@ from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
-from ryu.ofproto import ofproto_v1_3
+from ryu.ofproto import ofproto_v1_3,ether
 from ryu.lib.packet import packet,arp,ipv4
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types
 from ryu.topology.api import get_switch, get_link
 from ryu.topology import event, switches
 from collections import defaultdict
+import math
 import queue
+from solver import func
 # switches
 switches = []
+g = None
+d = defaultdict(lambda:defaultdict(lambda:None)) 
+cap = defaultdict(lambda:defaultdict(lambda:None)) 
+
+d[1][3] = 7
+d[3][1] = 2
+d[2][4] = 3
+d[4][2] = 2
+cap[1][2] = 10
+cap[2][3] = 10
+cap[1][4] = 10
+cap[4][3] = 10
+
+cap[2][1] = cap[1][2]
+cap[3][2] = cap[2][3]
+cap[4][1] = cap[1][4]
+cap[3][4] = cap[4][3]
 
 # mapping between mac address and dpid,port
 # dpid is used to identify each switch
@@ -26,6 +45,12 @@ adjacency = defaultdict(lambda:defaultdict(lambda:None))
 # ARP Cache
 arp_cache = {}
  
+group_id = 0
+
+def get_groupid():
+    global group_id
+    group_id+=1
+    return group_id
 
 def get_path(src, dst, start_port, final_port):
     # executing Dijkstra's algorithm
@@ -220,7 +245,7 @@ class ProjectController(app_manager.RyuApp):
                 print("arp cache hit")
                 self.send_arp_reply(datapath, in_port, arp_cache[arp_pkt.dst_ip],arp_pkt.src_mac,arp_pkt.dst_ip,arp_pkt.src_ip)
             else:
-                print("arp cache miss")
+                # print("arp cache miss")
                 # Flood the ARP request (with appropriate broadcast handling)
                 self.flood_arp_request(msg, datapath, in_port)
 
@@ -266,25 +291,98 @@ class ProjectController(app_manager.RyuApp):
 
 
     def handle_ip_packet(self,datapath,parser,msg,ofproto,in_port,pkt):
+        global switches
+        global g
+        if not g:
+            print(switches)
+            print(cap)
+            print(d)
+            g = func(switches,cap,d)
         ipv4_pkt = pkt.get_protocol(ipv4.ipv4)
         # getting source and destination of the link
         src = ipv4_pkt.src
         dst = ipv4_pkt.dst
         print("IP based routing for src=",src,"dst=",dst)
-        p = get_path(myips[src][0], myips[dst][0], myips[src][1], myips[dst][1])
-        self.install_ip_path(p, msg, src, dst)
-        print("installed path=", p)
-        out_port = p[0][2]
-
-        actions = [parser.OFPActionOutput(out_port)]
-
-        data = None
-        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
-            data = msg.data
-        out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
-                                actions=actions, data=data)
-        datapath.send_msg(out)
+        ofp = datapath.ofproto
+        ofp_parser = datapath.ofproto_parser
+        # switch to host flow rule for dst
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=dst, ipv4_dst=src)
+        action_port = myips[dst][1]
+        actions = [parser.OFPActionOutput(action_port)]
+        instructions = [ofp_parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
+        mod = ofp_parser.OFPFlowMod(
+                datapath=datapath,
+                priority=100,
+                match=match,
+                instructions=instructions)
+        datapath.send_msg(mod)
         
+        # switch to host flow rule for src
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src, ipv4_dst=dst)
+        action_port = myips[dst][1]
+        datapath_new = self.datapath_list[myips[dst][0]-1]
+        actions = [parser.OFPActionOutput(action_port)]
+        instructions = [ofp_parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
+        mod = ofp_parser.OFPFlowMod(
+                datapath=datapath_new,
+                priority=100,
+                match=match,
+                instructions=instructions)
+        datapath_new.send_msg(mod)
+        
+        switches = sorted(switches)
+        for sw in switches:
+            datapath = self.datapath_list[sw-1]
+            src_switch = myips[src][0]
+            dst_switch = myips[dst][0]
+            buckets = []
+            for sw_neigh in switches:
+                if sw_neigh == sw:
+                    continue
+                if cap[sw][sw_neigh]:
+                    bucket_weight = g[src_switch][dst_switch][(sw,sw_neigh)]
+                    action_port = adjacency[sw][sw_neigh]
+                    bucket_action = [ofp_parser.OFPActionOutput(action_port)]
+                    print(sw,sw_neigh)
+                    print(bucket_weight,action_port)
+                    if bucket_weight:
+                        buckets.append(
+                                ofp_parser.OFPBucket(
+                                    weight=math.ceil(bucket_weight),
+                                    watch_port=ofp.OFPG_ANY,
+                                    watch_group=ofp.OFPG_ANY,
+                                    actions=bucket_action
+                                )
+                            )
+            
+            print("here",sw)
+            print(datapath)
+            print(datapath.id)
+            if len(buckets):
+                group_id = get_groupid()
+            # add the group table to the switch
+                mod_group = ofp_parser.OFPGroupMod(
+                    datapath=datapath,
+                    command=ofp.OFPGC_ADD,
+                    type_=ofp.OFPGT_SELECT,
+                    group_id=group_id,
+                    buckets=buckets
+                )
+                datapath.send_msg(mod_group)
+                
+                # install a flow rule with match as srcip and dstip and action to group table with group_ip
+                match = ofp_parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP,ipv4_src=src, ipv4_dst=dst)
+                actions = [parser.OFPActionGroup(group_id)]
+                instructions = [ofp_parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
+                mod = ofp_parser.OFPFlowMod(
+                    datapath=datapath,
+                    priority=65535,
+                    match=match,
+                    instructions=instructions
+                )
+                datapath.send_msg(mod)
+                    
+                       
     events = [event.EventSwitchEnter,
               event.EventSwitchLeave, event.EventPortAdd,
               event.EventPortDelete, event.EventPortModify,
