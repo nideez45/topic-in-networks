@@ -32,6 +32,8 @@ cap[3][2] = cap[2][3]
 cap[4][1] = cap[1][4]
 cap[3][4] = cap[4][3]
 
+processed_pairs = defaultdict(lambda: set())
+
 # mapping between mac address and dpid,port
 # dpid is used to identify each switch
 mymacs = {}
@@ -46,6 +48,8 @@ adjacency = defaultdict(lambda:defaultdict(lambda:None))
 arp_cache = {}
  
 group_id = 0
+
+
 
 def get_groupid():
     global group_id
@@ -358,8 +362,10 @@ class ProjectController(app_manager.RyuApp):
             print("here",sw)
             print(datapath)
             print(datapath.id)
-            if len(buckets):
+            processed = processed_pairs[datapath.id]
+            if len(buckets) and (src,dst) not in processed:
                 group_id = get_groupid()
+                processed.add((src,dst))
             # add the group table to the switch
                 mod_group = ofp_parser.OFPGroupMod(
                     datapath=datapath,
